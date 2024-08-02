@@ -1,0 +1,17 @@
+[package]
+name = "transaction-cobuild-lock-demo"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ckb-transaction-cobuild = { path = "../../ckb-transaction-cobuild" }
+ckb-std = { version = "0.15.1" }
+ckb-hash = { version = "0.112.1", default-features = false, features = [
+    "ckb-contract",
+] }
+molecule = { version = "0.7.5", default-features = false }
+secp256k1 = { version = "0.29.0", default-features = false, features = [
+    "alloc",
+    "lowmemory",
+    "recovery",
+] }
