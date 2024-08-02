@@ -4,7 +4,7 @@ use ckb_std::{
     high_level::{load_cell_data, load_script_hash},
     syscalls::SysError,
 };
-use ckb_transaction_cobuild::fetch_message;
+use ckb_transaction_cobuild::sighashall::fetch_message;
 use core::result::Result;
 
 use crate::error::Error;

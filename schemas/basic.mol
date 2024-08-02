@@ -6,8 +6,9 @@ option Uint32Opt (Uint32);
 
 table Action {
     script_info_hash: Byte32,   // script info
+    script_type: byte,          // script_type 0-input_lock, 1-input_proxy, 2-output_proxy
     script_hash: Byte32,        // script
-    data: Bytes,              // action data
+    data: Bytes,                // action data
 }
 
 vector ActionVec <Action>;
@@ -72,10 +73,15 @@ table OtxStart {
 }
 
 table Otx {
-    input_cells: Uint32,
-    output_cells: Uint32,
-    cell_deps: Uint32,
-    header_deps: Uint32,
+    flag: byte,
+    fixed_input_cells: Uint32,
+    fixed_output_cells: Uint32,
+    fixed_cell_deps: Uint32,
+    fixed_header_deps: Uint32,
     message: Message,
+    dynamic_input_cells: Uint32,
+    dynamic_output_cells: Uint32,
+    dynamic_cell_deps: Uint32,
+    dynamic_header_deps: Uint32,
     seals: SealPairVec,
 }

@@ -26,12 +26,12 @@ pub fn ckb_auth(
     let secp = Secp256k1::new();
     let public_key = match secp.recover_ecdsa(&Message::from_digest(*message_digest), &signature) {
         Ok(public_key) => public_key,
-        Err(_) => return Err(Error::AuthError),
+        Err(_) => return Err(Error::AuthFailed),
     };
 
     let recovered_pk_hash = blake2b_256(public_key.serialize().as_slice())[0..20].to_vec();
     if pubkey_hash != recovered_pk_hash.as_slice() {
-        return Err(Error::AuthError);
+        return Err(Error::AuthFailed);
     }
 
     Ok(())

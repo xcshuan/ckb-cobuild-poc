@@ -1,9 +1,8 @@
 use ckb_std::{
     ckb_types::{bytes::Bytes, prelude::*},
-    debug,
     high_level::load_script,
 };
-use ckb_transaction_cobuild::parse_message;
+use ckb_transaction_cobuild::sighashall::parse_message;
 use core::result::Result;
 
 use crate::{auth::ckb_auth, error::Error};

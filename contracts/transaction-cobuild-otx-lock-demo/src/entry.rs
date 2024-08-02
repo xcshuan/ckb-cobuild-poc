@@ -2,7 +2,7 @@ use ckb_std::{
     ckb_types::{bytes::Bytes, prelude::*},
     high_level::{load_script, load_script_hash},
 };
-use ckb_transaction_cobuild::verify_otx_message;
+use ckb_transaction_cobuild::otx::verify_otx_message;
 use core::result::Result;
 
 use crate::{auth::ckb_auth, error::Error};
@@ -22,6 +22,6 @@ pub fn main() -> Result<(), Error> {
     if verify_pass {
         Ok(())
     } else {
-        Err(Error::AuthError)
+        Err(Error::AuthFailed)
     }
 }
