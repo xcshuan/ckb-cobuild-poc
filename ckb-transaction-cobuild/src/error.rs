@@ -1,14 +1,21 @@
 use ckb_std::error::SysError;
 use molecule::error::VerificationError;
+pub use molecule::lazy_reader::Error as LazyReaderError;
 
-#[derive(Eq, PartialEq, Debug, Clone, Copy)]
+#[derive(Debug)]
 pub enum Error {
     Sys(SysError),
+    LazyReader(LazyReaderError),
     MoleculeEncoding,
     WrongSighashAll,
     WrongWitnessLayout,
     WrongOtxStart,
-    InvalidOtxFlag,
+    WrongOtx,
+    NoSealFound,
+    AuthError,
+    ScriptHashAbsent,
+    WrongCount,
+    InvalidOtxFlag
 }
 
 impl From<SysError> for Error {
@@ -20,5 +27,11 @@ impl From<SysError> for Error {
 impl From<VerificationError> for Error {
     fn from(_: VerificationError) -> Self {
         Error::MoleculeEncoding
+    }
+}
+
+impl From<LazyReaderError> for Error {
+    fn from(e: LazyReaderError) -> Self {
+        Error::LazyReader(e)
     }
 }

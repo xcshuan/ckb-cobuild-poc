@@ -17,3 +17,6 @@ members = [
 overflow-checks = true
 strip = true
 codegen-units = 1
+
+[patch.crates-io]
+molecule = { git = "https://github.com/XuJiandong/molecule.git", rev = "785a309" }

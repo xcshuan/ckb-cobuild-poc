@@ -1,58 +1,48 @@
-use alloc::vec::Vec;
-use ckb_std::{
-    ckb_constants::Source,
-    ckb_types::packed::CellInput,
-    error::SysError,
-    high_level::{load_cell, load_cell_data, load_tx_hash, load_witness, QueryIter},
-    syscalls::load_transaction,
-};
-use core::convert::Into;
-use molecule::{
-    prelude::{Entity, Reader},
-    NUMBER_SIZE,
-};
+use alloc::{collections::btree_map::BTreeMap, vec::Vec};
+use ckb_std::{ckb_constants::Source, error::SysError, high_level::load_tx_hash, syscalls};
+use molecule::lazy_reader::Cursor;
 
 use crate::{
     blake2b::{new_sighash_all_blake2b, new_sighash_all_only_blake2b},
     error::Error,
-    schemas::{
-        basic::Message,
-        top_level::{WitnessLayoutReader, WitnessLayoutUnionReader},
-    },
+    lazy_reader::{self, new_input_cell_data, new_transaction, new_witness},
+    log, parse_witness_layouts,
+    schemas2::{basic, top_level},
+    utils::{is_script_exist, ScriptLocation},
+    Callback, ScriptType,
 };
 
 ///
 /// fetch the seal field of SighashAll or SighashAllOnly in current script group
 ///
 fn fetch_seal() -> Result<Vec<u8>, Error> {
-    match load_witness(0, Source::GroupInput) {
-        Ok(witness) => {
-            if let Ok(r) = WitnessLayoutReader::from_slice(&witness) {
-                match r.to_enum() {
-                    WitnessLayoutUnionReader::SighashAll(s) => Ok(s.seal().raw_data().to_vec()),
-                    WitnessLayoutUnionReader::SighashAllOnly(s) => Ok(s.seal().raw_data().to_vec()),
-                    _ => Err(Error::MoleculeEncoding),
-                }
-            } else {
-                Err(Error::MoleculeEncoding)
-            }
+    let witness = new_witness(0, Source::GroupInput)?;
+    let witness = top_level::WitnessLayout::try_from(witness)?;
+    match witness {
+        top_level::WitnessLayout::SighashAll(s) => {
+            let seal: Vec<u8> = s.seal()?.try_into()?;
+            Ok(seal)
         }
-        Err(e) => Err(e.into()),
+        top_level::WitnessLayout::SighashAllOnly(s) => {
+            let seal: Vec<u8> = s.seal()?.try_into()?;
+            Ok(seal)
+        }
+        _ => Err(Error::MoleculeEncoding),
     }
 }
 
-///
-/// fetch the message field of SighashAll
-/// returns None if there is no SighashAll witness
-/// returns Error::WrongWitnessLayout if there are more than one SighashAll witness
-pub fn fetch_message() -> Result<Option<Message>, Error> {
-    let mut iter = QueryIter::new(load_witness, Source::Input).filter_map(|witness| {
-        WitnessLayoutReader::from_slice(&witness)
-            .ok()
-            .and_then(|r| match r.to_enum() {
-                WitnessLayoutUnionReader::SighashAll(s) => Some(s.message().to_entity()),
-                _ => None,
-            })
+/// Retrieves the `message` field from a `SighashAll` witness.
+/// - Returns `None` if a `SighashAll` witness is not present.
+/// - Returns `Error::WrongWitnessLayout` if multiple `SighashAll` witnesses are
+///   found. This function is intended for use within type scripts and lock
+///   scripts.
+pub fn fetch_message() -> Result<Option<basic::Message>, Error> {
+    let tx = new_transaction();
+    let (witness_layouts, _) = parse_witness_layouts(&tx)?;
+
+    let mut iter = witness_layouts.iter().filter_map(|witness| match witness {
+        Some(top_level::WitnessLayout::SighashAll(m)) => Some(m.message().unwrap().clone()),
+        _ => None,
     });
 
     match (iter.next(), iter.next()) {
@@ -67,22 +57,35 @@ pub fn fetch_message() -> Result<Option<Message>, Error> {
 /// first one should be empty
 ///
 fn check_others_in_group() -> Result<(), Error> {
-    if QueryIter::new(load_witness, Source::GroupInput)
-        .skip(1)
-        .all(|witness| witness.is_empty())
-    {
-        Ok(())
-    } else {
-        Err(Error::WrongWitnessLayout)
+    let mut index = 1;
+    let mut buf = [0u8; 4];
+    loop {
+        let r = syscalls::load_witness(&mut buf, 0, index, Source::GroupInput);
+        match r {
+            Ok(actual_length) => {
+                if actual_length > 0 {
+                    return Err(Error::WrongWitnessLayout);
+                }
+            }
+            Err(SysError::LengthNotEnough(_)) => return Err(Error::WrongWitnessLayout),
+            _ => break,
+        }
+        index += 1;
     }
+    Ok(())
 }
 
-fn generate_signing_message_hash(message: &Option<Message>) -> Result<[u8; 32], Error> {
+///
+/// Generate signing message hash for SighashAll or SighashAllOnly.
+///
+fn generate_signing_message_hash(message: &Option<basic::Message>) -> Result<[u8; 32], Error> {
+    let tx = new_transaction();
+
     // message
     let mut hasher = match message {
         Some(m) => {
             let mut hasher = new_sighash_all_blake2b();
-            hasher.update(m.as_slice());
+            hasher.update_cursor(m.cursor.clone());
             hasher
         }
         None => new_sighash_all_only_blake2b(),
@@ -90,55 +93,57 @@ fn generate_signing_message_hash(message: &Option<Message>) -> Result<[u8; 32], 
     // tx hash
     hasher.update(&load_tx_hash()?);
     // inputs cell and data
-    let inputs_len = calculate_inputs_len()?;
+    let inputs = tx.raw()?.inputs()?;
+    let inputs_len = inputs.len()?;
     for i in 0..inputs_len {
-        let input_cell = load_cell(i, Source::Input)?;
-        hasher.update(input_cell.as_slice());
-        // TODO cell data may be too large, use high_level::load_data fn to load and hash it in chunks
-        let input_cell_data = load_cell_data(i, Source::Input)?;
-        hasher.update(&(input_cell_data.len() as u32).to_le_bytes());
-        hasher.update(&input_cell_data);
+        let reader = lazy_reader::InputCellReader::try_new(i, Source::Input)?;
+        let cursor: Cursor = reader.into();
+        hasher.update_cursor(cursor);
+
+        let cursor = new_input_cell_data(i, Source::Input)?;
+        hasher.update(&(cursor.size as u32).to_le_bytes());
+        hasher.update_cursor(cursor);
     }
     // extra witnesses
-    for witness in QueryIter::new(load_witness, Source::Input).skip(inputs_len) {
-        hasher.update(&(witness.len() as u32).to_le_bytes());
-        hasher.update(&witness);
+    for witness in tx.witnesses()?.iter().skip(inputs_len) {
+        hasher.update(&(witness.size as u32).to_le_bytes());
+        hasher.update_cursor(witness);
     }
-
     let mut result = [0u8; 32];
+    let count = hasher.count();
     hasher.finalize(&mut result);
+    log!(
+        "generate_signing_message_hash totally hashed {} bytes, hash = {:?}",
+        count,
+        result
+    );
     Ok(result)
 }
 
-///
-/// the molecule data structure of transaction is:
-/// full-size|raw-offset|witnesses-offset|raw-full-size|version-offset|cell_deps-offset|header_deps-offset|inputs-offset|outputs-offset|...
-/// full-size and offset are 4 bytes, so we can read the inputs-offset and outputs-offset at [28, 36),
-/// then we can get the length of inputs by calculating the difference between inputs-offset and outputs-offset
-///
-fn calculate_inputs_len() -> Result<usize, SysError> {
-    let mut offsets = [0u8; 8];
-    match load_transaction(&mut offsets, 28) {
-        // this syscall will always return SysError::LengthNotEnough since we only load 8 bytes, let's ignore it
-        Err(SysError::LengthNotEnough(_)) => {}
-        Err(SysError::Unknown(e)) => return Err(SysError::Unknown(e)),
-        _ => unreachable!(),
-    }
-    let inputs_offset = u32::from_le_bytes(offsets[0..4].try_into().unwrap());
-    let outputs_offset = u32::from_le_bytes(offsets[4..8].try_into().unwrap());
-    Ok((outputs_offset as usize - inputs_offset as usize - NUMBER_SIZE) / CellInput::TOTAL_SIZE)
-}
-
-///
-/// parse transaction with message and return 2 values:
-/// 1. signing_message_hash, 32 bytes message for signature verification
-/// 2. seal, seal field in SighashAll or SighashAllOnly. Normally as signature.
-///    This function is mainly used by lock script
-///
-pub fn parse_message() -> Result<([u8; 32], Vec<u8>), Error> {
+pub fn cobuild_normal_entry<F: Callback>(
+    verifier: F,
+    script_hashes_cache: &BTreeMap<[u8; 32], ScriptLocation>,
+) -> Result<(), Error> {
     check_others_in_group()?;
     let message = fetch_message()?;
     let signing_message_hash = generate_signing_message_hash(&message)?;
     let seal = fetch_seal()?;
-    Ok((signing_message_hash, seal))
+    verifier.invoke(&seal, &signing_message_hash)?;
+
+    if let Some(message) = message {
+        for action in message.actions()?.iter() {
+            let script_type = match action.script_type()? {
+                0 => ScriptType::InputLock,
+                1 => ScriptType::InputType,
+                2 => ScriptType::OutputType,
+                _ => return Err(Error::WrongSighashAll),
+            };
+
+            if !is_script_exist(script_hashes_cache, action.script_hash()?, script_type) {
+                return Err(Error::ScriptHashAbsent);
+            }
+        }
+    }
+
+    Ok(())
 }

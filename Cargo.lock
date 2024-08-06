@@ -846,8 +846,7 @@ dependencies = [
 [[package]]
 name = "molecule"
 version = "0.7.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d4fd9767ab5e5f2ea40f71ff4c8bdb633c50509052e093c2fdd0e390a749dfa3"
+source = "git+https://github.com/XuJiandong/molecule.git?rev=785a309#785a3092d6a6210c37a16afb6b80535a50df7324"
 dependencies = [
  "bytes",
  "cfg-if",
