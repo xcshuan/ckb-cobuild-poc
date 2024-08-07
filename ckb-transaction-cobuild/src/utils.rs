@@ -4,6 +4,8 @@ use ckb_std::{
     high_level::{load_cell_lock_hash, load_cell_type_hash, QueryIter},
 };
 
+use crate::{error::Error, schemas2::basic::Message};
+
 #[derive(Debug)]
 pub enum ScriptType {
     InputLock,
@@ -104,4 +106,24 @@ pub fn is_script_included(
                 .iter()
                 .any(|loc| *loc >= start_index && *loc < end_index),
         })
+}
+
+pub fn check_message(
+    script_hashes_cache: &BTreeMap<[u8; 32], ScriptLocation>,
+    message: Message,
+) -> Result<(), Error> {
+    for action in message.actions()?.iter() {
+        let script_type = match action.script_type()? {
+            0 => ScriptType::InputLock,
+            1 => ScriptType::InputType,
+            2 => ScriptType::OutputType,
+            _ => return Err(Error::WrongScriptType),
+        };
+
+        if !is_script_exist(script_hashes_cache, action.script_hash()?, script_type) {
+            return Err(Error::ScriptHashAbsent);
+        }
+    }
+
+    Ok(())
 }

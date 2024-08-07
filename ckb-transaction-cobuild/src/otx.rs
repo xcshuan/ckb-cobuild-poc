@@ -60,8 +60,8 @@ pub fn generate_otx_smh(
 ) -> Result<[u8; 32], Error> {
     let mut hasher = new_otx_blake2b();
     hasher.update_cursor(message.cursor.clone());
-    hasher.update(&signing_range.inputs_count.to_le_bytes());
 
+    hasher.update(&signing_range.inputs_count.to_le_bytes());
     let inputs = raw_tx.inputs()?;
     for index in signing_range.input_start as usize
         ..(signing_range.input_start + signing_range.inputs_count) as usize
@@ -81,7 +81,6 @@ pub fn generate_otx_smh(
     }
 
     hasher.update(&signing_range.outputs_count.to_le_bytes());
-
     for index in signing_range.output_start as usize
         ..(signing_range.output_start + signing_range.outputs_count) as usize
     {
@@ -97,7 +96,6 @@ pub fn generate_otx_smh(
     }
 
     hasher.update(&signing_range.cell_deps_count.to_le_bytes());
-
     for index in signing_range.cell_dep_start as usize
         ..(signing_range.cell_dep_start + signing_range.cell_deps_count) as usize
     {
@@ -106,7 +104,6 @@ pub fn generate_otx_smh(
     }
 
     hasher.update(&signing_range.header_deps_count.to_le_bytes());
-
     for index in signing_range.header_dep_start as usize
         ..(signing_range.header_dep_start + signing_range.header_deps_count) as usize
     {

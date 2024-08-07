@@ -8,8 +8,8 @@ use crate::{
     lazy_reader::{self, new_input_cell_data, new_transaction, new_witness},
     log, parse_witness_layouts,
     schemas2::{basic, top_level},
-    utils::{is_script_exist, ScriptLocation},
-    Callback, ScriptType,
+    utils::{check_message, ScriptLocation},
+    Callback,
 };
 
 ///
@@ -131,18 +131,7 @@ pub fn cobuild_normal_entry<F: Callback>(
     verifier.invoke(&seal, &signing_message_hash)?;
 
     if let Some(message) = message {
-        for action in message.actions()?.iter() {
-            let script_type = match action.script_type()? {
-                0 => ScriptType::InputLock,
-                1 => ScriptType::InputType,
-                2 => ScriptType::OutputType,
-                _ => return Err(Error::WrongSighashAll),
-            };
-
-            if !is_script_exist(script_hashes_cache, action.script_hash()?, script_type) {
-                return Err(Error::ScriptHashAbsent);
-            }
-        }
+        check_message(script_hashes_cache, message)?;
     }
 
     Ok(())

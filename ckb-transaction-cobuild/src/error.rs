@@ -10,12 +10,13 @@ pub enum Error {
     WrongSighashAll,
     WrongWitnessLayout,
     WrongOtxStart,
+    WrongScriptType,
     WrongOtx,
     NoSealFound,
     AuthError,
     ScriptHashAbsent,
     WrongCount,
-    InvalidOtxFlag
+    InvalidOtxFlag,
 }
 
 impl From<SysError> for Error {

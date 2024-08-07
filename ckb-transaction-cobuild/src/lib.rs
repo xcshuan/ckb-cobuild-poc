@@ -59,7 +59,7 @@ use lazy_reader::new_transaction;
 use otx::{fetch_otx_start, generate_otx_smh, OtxDynamicConfigs, OtxSigningRange};
 use schemas2::{blockchain, top_level};
 use sighashall::cobuild_normal_entry;
-use utils::{cache_script_hashes, is_script_included, ScriptType};
+use utils::{cache_script_hashes, check_message, is_script_included, ScriptType};
 
 ///
 /// This is the callback trait should be implemented in lock script by
@@ -187,6 +187,8 @@ pub fn cobuild_entry<F: Callback>(verifier: F) -> Result<bool, Error> {
                 {
                     return Err(Error::WrongCount);
                 }
+
+                check_message(&script_hashes_cache, otx.message()?)?;
 
                 let lock_hash_existing_in_fixed = is_script_included(
                     &script_hashes_cache,
